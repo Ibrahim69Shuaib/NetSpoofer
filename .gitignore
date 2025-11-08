@@ -1,0 +1,38 @@
+# Build artifacts
+bin/
+obj/
+
+# Visual Studio
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# JetBrains Rider / IntlliJ
+.idea/
+
+# Logs & diagnostics
+*.log
+*.pdb
+*.mdb
+*.coverage
+*.coveragexml
+
+# Temporary files
+*.tmp
+*.temp
+~$*
+
+# Test resultse
+TestResult*/
+*.trx
+
+# NuGet packages
+*.nupkg
+
+# Publish profiles
+**/Properties/PublishProfiles/*
+
+# Npcap offline installer  (required at runtime for auto-install)
+!Resources/npcap-1.84.exe
