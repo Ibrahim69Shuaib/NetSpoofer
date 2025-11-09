@@ -3,6 +3,7 @@ using PacketDotNet;
 using SharpPcap;
 using System;
 using System.Collections.ObjectModel;
+using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.Linq;
 using System.Net;
@@ -39,6 +40,7 @@ namespace NetSpoofer {
 
         public string FilterText { get => _filterText; set { _filterText = value; OnPropertyChanged(); _monitor?.SetUiFilter(_filterText); } } private string _filterText = "";
         public ObservableCollection<PacketViewModel> Packets { get; } = new();
+        public ObservableCollection<HostEntry> Hosts { get; } = new();
 
         public string DnsDomain { get => _dnsDomain; set { _dnsDomain = value; OnPropertyChanged(); } } private string _dnsDomain = "";
         public string DnsIp { get => _dnsIp; set { _dnsIp = value; OnPropertyChanged(); } } private string _dnsIp = "";
@@ -59,6 +61,9 @@ namespace NetSpoofer {
         private DnsSpoofer? _dns;
         private PacketMonitor? _monitor;
         private BandwidthLimiter? _limiter;
+        private HostPolicyManager? _hostPolicies;
+        private HostTracker? _tracker;
+        private readonly ConcurrentDictionary<IPAddress, ArpSpoofer> _arpSpoofers = new();
 
         public MainWindow() {
             InitializeComponent();
@@ -78,14 +83,22 @@ namespace NetSpoofer {
                 Status = "Starting...";
                 _cap = new CaptureManager(SelectedInterface);
                 _limiter = new BandwidthLimiter(DownKbps * 1024, UpKbps * 1024, ExtraDelayMs);
+                _hostPolicies = new HostPolicyManager();
                 _monitor = new PacketMonitor(Packets);
-                _cap.OnPacket += pkt => _monitor!.OnPacket(pkt);
+                _cap.OnPacket += pkt => {
+                    _monitor!.OnPacket(pkt);
+                    _tracker?.Record(pkt);
+                };
+
+                // Auto-detect gateway if not provided
+                if (string.IsNullOrWhiteSpace(GatewayIp)) {
+                    var gw = TryGetDefaultGatewayForDevice(SelectedInterface);
+                    if (gw != null) GatewayIp = gw.ToString();
+                }
 
                 PhysicalAddressEx nicMac = new(SelectedInterface.MacAddress);
-                if (EnableArp) {
-                    _arp = new ArpSpoofer(_cap, nicMac, IPAddress.Parse(GatewayIp), IPAddress.Parse(TargetIp));
-                    _arp.Start();
-                }
+                // Start host tracking (uses gateway context if known)
+                _tracker = new HostTracker(Hosts, IPAddress.TryParse(GatewayIp, out var gwIp) ? gwIp : null);
 
                 if (EnableDns) {
                     _dns = new DnsSpoofer(_cap, nicMac, DnsRules);
@@ -95,7 +108,23 @@ namespace NetSpoofer {
                 if (EnableForwarding) {
                     _cap.EnableForwarding = true;
                     _cap.AttachBandwidthLimiter(_limiter!);
-                    _cap.SetBridgePeers(IPAddress.Parse(TargetIp), IPAddress.Parse(GatewayIp));
+                    _cap.AttachHostPolicies(_hostPolicies!);
+                    if (IPAddress.TryParse(GatewayIp, out var gw)) _cap.SetGatewayIp(gw);
+                    // As hosts appear, start ARP/forwarding for each
+                    Hosts.CollectionChanged += (s, e) => {
+                        if (e.NewItems != null) {
+                            foreach (HostEntry h in e.NewItems) {
+                                h.PropertyChanged += (_, __) => ApplyHostPolicy(h);
+                                ApplyHostPolicy(h);
+                                SetupArpAndForward(h.Ip, nicMac, gw);
+                            }
+                        }
+                    };
+                    foreach (var h in Hosts.ToList()) {
+                        h.PropertyChanged += (_, __) => ApplyHostPolicy(h);
+                        ApplyHostPolicy(h);
+                        SetupArpAndForward(h.Ip, nicMac, gw);
+                    }
                 }
 
                 _cap.Start();
@@ -107,9 +136,39 @@ namespace NetSpoofer {
             try {
                 _dns?.Stop();
                 _arp?.Stop();
+                foreach (var kv in _arpSpoofers) kv.Value.Stop();
                 _cap?.Stop();
                 Status = "Stopped";
             } catch (Exception ex) { Status = "Error: " + ex.Message; }
+        }
+
+        private void SetupArpAndForward(IPAddress ip, PhysicalAddressEx nicMac, IPAddress gw) {
+            try {
+                if (!_arpSpoofers.ContainsKey(ip) && EnableArp) {
+                    var spoofer = new ArpSpoofer(_cap!, nicMac, gw, ip);
+                    spoofer.Start();
+                    _arpSpoofers[ip] = spoofer;
+                }
+                _cap!.AddTarget(ip);
+            } catch { }
+        }
+
+        private void ApplyHostPolicy(HostEntry h) {
+            try {
+                var down = h.DownLimitKbps > 0 ? h.DownLimitKbps * 1024L : DownKbps * 1024L;
+                var up = h.UpLimitKbps > 0 ? h.UpLimitKbps * 1024L : UpKbps * 1024L;
+                _hostPolicies?.SetPolicy(h.Ip, down, up, h.Blocked, ExtraDelayMs);
+            } catch { }
+        }
+
+        private static IPAddress? TryGetDefaultGatewayForDevice(ICaptureDevice dev) {
+            try {
+                var mac = dev.MacAddress.GetAddressBytes();
+                var ni = System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces()
+                    .FirstOrDefault(n => n.GetPhysicalAddress().GetAddressBytes().SequenceEqual(mac));
+                var gw = ni?.GetIPProperties().GatewayAddresses.FirstOrDefault(g => g.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)?.Address;
+                return gw;
+            } catch { return null; }
         }
     }
 }

@@ -51,6 +51,20 @@
             <Setter Property="Margin" Value="0,10,0,0"/>
           </Style>
         </StackPanel.Resources>
+        <GroupBox Header="Clients">
+          <DataGrid ItemsSource="{Binding Hosts}" AutoGenerateColumns="False">
+            <DataGrid.Columns>
+              <DataGridTextColumn Header="IP" Binding="{Binding Ip}" Width="140"/>
+              <DataGridTextColumn Header="MAC" Binding="{Binding Mac}" Width="160"/>
+              <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="120"/>
+              <DataGridTextColumn Header="Down (KB/s)" Binding="{Binding DownloadKbps}" Width="120"/>
+              <DataGridTextColumn Header="Up (KB/s)" Binding="{Binding UploadKbps}" Width="120"/>
+              <DataGridCheckBoxColumn Header="Blocked" Binding="{Binding Blocked}" Width="90"/>
+              <DataGridTextColumn Header="Down Limit" Binding="{Binding DownLimitKbps}" Width="90"/>
+              <DataGridTextColumn Header="Up Limit" Binding="{Binding UpLimitKbps}" Width="90"/>
+            </DataGrid.Columns>
+          </DataGrid>
+        </GroupBox>
         <GroupBox Header="ARP Spoofing">
           <StackPanel>
             <StackPanel.Resources>

@@ -15,15 +15,20 @@ namespace NetSpoofer {
         public event Action<Packet>? OnPacket;
         public bool EnableForwarding { get; set; }
         private BandwidthLimiter? _limiter;
-        private IPAddress? _targetIp, _gatewayIp;
-        private PhysicalAddress? _targetMac, _gatewayMac;
+        private HostPolicyManager? _hostPolicies;
+        private IPAddress? _gatewayIp;
+        private PhysicalAddress? _gatewayMac;
+        private readonly ConcurrentDictionary<IPAddress, PhysicalAddress?> _targets = new();
         private readonly ConcurrentQueue<RawCapture> _q = new();
         private DnsSpoofer? _dns;
 
         public CaptureManager(ICaptureDevice dev) { _dev = dev; }
         public void AttachBandwidthLimiter(BandwidthLimiter limiter) => _limiter = limiter;
+        public void AttachHostPolicies(HostPolicyManager policies) => _hostPolicies = policies;
         public void AttachDnsSpoof(DnsSpoofer dns) => _dns = dns;
-        public void SetBridgePeers(IPAddress targetIp, IPAddress gatewayIp) { _targetIp = targetIp; _gatewayIp = gatewayIp; }
+        public void SetGatewayIp(IPAddress gatewayIp) { _gatewayIp = gatewayIp; }
+        public void AddTarget(IPAddress ip) { _targets.TryAdd(ip, null); }
+        public void RemoveTarget(IPAddress ip) { _targets.TryRemove(ip, out _); }
 
         public void Start() {
             _dev.Open(DeviceModes.Promiscuous, 1);
@@ -49,23 +54,29 @@ namespace NetSpoofer {
             var eth = pkt.Extract<EthernetPacket>();
             var ip = pkt.Extract<IPv4Packet>();
             if (eth == null || ip == null) return;
-            if (_targetIp == null || _gatewayIp == null) return;
-            _targetMac ??= ArpSpoofer.ResolveMacAddress(_targetIp);
+            if (_gatewayIp == null) return;
             _gatewayMac ??= ArpSpoofer.ResolveMacAddress(_gatewayIp);
-            if (_targetMac == null || _gatewayMac == null) return;
+            if (_gatewayMac == null) return;
 
-            // Bridge: if packet from target -> send to gateway; if from gateway -> send to target
-            if (ip.SourceAddress.Equals(_targetIp)) {
+            // target -> gateway
+            if (_targets.ContainsKey(ip.SourceAddress)) {
+                if (_hostPolicies?.IsBlocked(ip.SourceAddress) == true) return;
                 eth.DestinationHardwareAddress = _gatewayMac;
                 eth.SourceHardwareAddress = _dev.MacAddress;
                 var bytes = eth.Bytes;
-                _limiter?.ThrottleUpload(bytes.Length);
+                var limiter = _hostPolicies?.GetLimiter(ip.SourceAddress) ?? _limiter;
+                limiter?.ThrottleUpload(bytes.Length);
                 SendBytes(bytes);
-            } else if (ip.SourceAddress.Equals(_gatewayIp)) {
-                eth.DestinationHardwareAddress = _targetMac;
+            }
+            // gateway -> target
+            else if (ip.SourceAddress.Equals(_gatewayIp) && _targets.ContainsKey(ip.DestinationAddress)) {
+                var tmac = _targets[ip.DestinationAddress] ??= ArpSpoofer.ResolveMacAddress(ip.DestinationAddress);
+                if (_hostPolicies?.IsBlocked(ip.DestinationAddress) == true) return;
+                eth.DestinationHardwareAddress = tmac ?? eth.DestinationHardwareAddress;
                 eth.SourceHardwareAddress = _dev.MacAddress;
                 var bytes = eth.Bytes;
-                _limiter?.ThrottleDownload(bytes.Length);
+                var limiter = _hostPolicies?.GetLimiter(ip.DestinationAddress) ?? _limiter;
+                limiter?.ThrottleDownload(bytes.Length);
                 SendBytes(bytes);
             }
         }
