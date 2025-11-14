@@ -56,6 +56,8 @@ namespace NetSpoofer {
         public ICommand StartCommand => new RelayCommand(Start, () => SelectedInterface != null);
         public ICommand StopCommand => new RelayCommand(Stop);
 
+        public ICommand ScanSubnetCommand => new RelayCommand(async () => await ScanSubnet(), () => SelectedInterface != null);
+
         private CaptureManager? _cap;
         private ArpSpoofer? _arp;
         private DnsSpoofer? _dns;
@@ -89,44 +91,47 @@ namespace NetSpoofer {
                     _monitor!.OnPacket(pkt);
                     _tracker?.Record(pkt);
                 };
-
+        
                 // Auto-detect gateway if not provided
                 if (string.IsNullOrWhiteSpace(GatewayIp)) {
-                    var gw = TryGetDefaultGatewayForDevice(SelectedInterface);
-                    if (gw != null) GatewayIp = gw.ToString();
+                    var gwAuto = TryGetDefaultGatewayForDevice(SelectedInterface);
+                    if (gwAuto != null) GatewayIp = gwAuto.ToString();
                 }
-
+        
                 PhysicalAddressEx nicMac = new(SelectedInterface.MacAddress);
                 // Start host tracking (uses gateway context if known)
-                _tracker = new HostTracker(Hosts, IPAddress.TryParse(GatewayIp, out var gwIp) ? gwIp : null);
-
+                _tracker = new HostTracker(Hosts, IPAddress.TryParse(GatewayIp, out var gwTracker) ? gwTracker : null);
+        
                 if (EnableDns) {
                     _dns = new DnsSpoofer(_cap, nicMac, DnsRules);
                     _cap.AttachDnsSpoof(_dns);
                 }
-
+        
                 if (EnableForwarding) {
                     _cap.EnableForwarding = true;
                     _cap.AttachBandwidthLimiter(_limiter!);
                     _cap.AttachHostPolicies(_hostPolicies!);
-                    if (IPAddress.TryParse(GatewayIp, out var gw)) _cap.SetGatewayIp(gw);
+        
+                    IPAddress? gw = IPAddress.TryParse(GatewayIp, out var parsedGw) ? parsedGw : null;
+                    if (gw != null) _cap.SetGatewayIp(gw);
+        
                     // As hosts appear, start ARP/forwarding for each
                     Hosts.CollectionChanged += (s, e) => {
                         if (e.NewItems != null) {
                             foreach (HostEntry h in e.NewItems) {
                                 h.PropertyChanged += (_, __) => ApplyHostPolicy(h);
                                 ApplyHostPolicy(h);
-                                SetupArpAndForward(h.Ip, nicMac, gw);
+                                if (gw != null) SetupArpAndForward(h.Ip, nicMac, gw);
                             }
                         }
                     };
                     foreach (var h in Hosts.ToList()) {
                         h.PropertyChanged += (_, __) => ApplyHostPolicy(h);
                         ApplyHostPolicy(h);
-                        SetupArpAndForward(h.Ip, nicMac, gw);
+                        if (gw != null) SetupArpAndForward(h.Ip, nicMac, gw);
                     }
                 }
-
+        
                 _cap.Start();
                 Status = "Running";
             } catch (Exception ex) { Status = "Error: " + ex.Message; }
@@ -169,6 +174,31 @@ namespace NetSpoofer {
                 var gw = ni?.GetIPProperties().GatewayAddresses.FirstOrDefault(g => g.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)?.Address;
                 return gw;
             } catch { return null; }
+        }
+
+        private async Task ScanSubnet() {
+            try {
+                if (SelectedInterface == null) return;
+                Status = "Scanning subnet...";
+                var gw = IPAddress.TryParse(GatewayIp, out var gwi) ? gwi : TryGetDefaultGatewayForDevice(SelectedInterface);
+    
+                await SubnetScanner.ScanAsync(
+                    SelectedInterface,
+                    Hosts,
+                    onFound: entry => {
+                        // If capture already running, wire policies/ARP forward for new entries immediately
+                        entry.PropertyChanged += (_, __) => ApplyHostPolicy(entry);
+                        ApplyHostPolicy(entry);
+                        if (_cap != null && EnableForwarding && gw != null) {
+                            var nic = new PhysicalAddressEx(SelectedInterface.MacAddress);
+                            SetupArpAndForward(entry.Ip, nic, gw);
+                        }
+                    });
+    
+                Status = "Scan complete";
+            } catch (Exception ex) {
+                Status = "Scan error: " + ex.Message;
+            }
         }
     }
 }

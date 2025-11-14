@@ -58,10 +58,19 @@ namespace NetSpoofer {
             if (!IsLan(ip)) return;
             var entry = _map.GetOrAdd(ip, _ => {
                 var e = new HostEntry { Ip = ip, Mac = FormatMac(mac), LastSeenUtc = DateTime.UtcNow };
+                e.Vendor = VendorLookup.FromMac(e.Mac);
                 App.Current.Dispatcher.Invoke(() => _list.Add(e));
+                // Resolve DNS/NetBIOS name in background (short timeout)
+                System.Threading.Tasks.Task.Run(async () => {
+                    var name = await NameResolver.ResolveAsync(ip, 2000);
+                    if (!string.IsNullOrWhiteSpace(name)) {
+                        App.Current.Dispatcher.Invoke(() => e.Name = name!);
+                    }
+                });
                 return e;
             });
             entry.Mac = FormatMac(mac);
+            entry.Vendor = VendorLookup.FromMac(entry.Mac);
             entry.LastSeenUtc = DateTime.UtcNow;
         }
 

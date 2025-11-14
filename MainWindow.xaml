@@ -5,6 +5,7 @@
       <RowDefinition Height="*"/>
     </Grid.RowDefinitions>
 
+    <!-- Header toolbar -->
     <Border Padding="10" Background="{DynamicResource MahApps.Brushes.ThemeBackground}">
       <StackPanel Orientation="Horizontal">
         <StackPanel.Resources>
@@ -16,10 +17,10 @@
         <ComboBox Width="320" ItemsSource="{Binding Interfaces}" SelectedItem="{Binding SelectedInterface}" DisplayMemberPath="Description"/>
         <TextBlock Text="Gateway IP:" VerticalAlignment="Center"/>
         <TextBox Width="150" Text="{Binding GatewayIp}"/>
-        <TextBlock Text="Target IP:" VerticalAlignment="Center"/>
-        <TextBox Width="150" Text="{Binding TargetIp}"/>
+        <!-- Removed Target IP (hosts are auto-discovered) -->
         <Button Content="Start" Command="{Binding StartCommand}"/>
         <Button Content="Stop" Command="{Binding StopCommand}"/>
+        <Button Content="Scan subnet" Command="{Binding ScanSubnetCommand}"/>
       </StackPanel>
     </Border>
 
@@ -29,113 +30,113 @@
         <ColumnDefinition Width="*"/>
       </Grid.ColumnDefinitions>
 
-      <GroupBox Header="Live Packet Monitor" Margin="0,0,10,0">
-        <DockPanel>
-          <TextBox DockPanel.Dock="Top" Margin="0,0,0,5" mah:TextBoxHelper.Watermark="Filter (e.g., ip:192.168.1.10 proto:udp port:53)" Text="{Binding FilterText}"/>
-          <DataGrid ItemsSource="{Binding Packets}" AutoGenerateColumns="False" IsReadOnly="True">
-            <DataGrid.Columns>
-              <DataGridTextColumn Header="Time" Binding="{Binding Time}" Width="120"/>
-              <DataGridTextColumn Header="Proto" Binding="{Binding Protocol}" Width="80"/>
-              <DataGridTextColumn Header="Src" Binding="{Binding Source}" Width="200"/>
-              <DataGridTextColumn Header="Dst" Binding="{Binding Destination}" Width="200"/>
-              <DataGridTextColumn Header="Info" Binding="{Binding Info}" Width="*"/>
-              <DataGridTextColumn Header="Len" Binding="{Binding Length}" Width="60"/>
-            </DataGrid.Columns>
-          </DataGrid>
-        </DockPanel>
-      </GroupBox>
+      <!-- Clients table is now the main view -->
+      <GroupBox Header="Clients" Margin="0,0,10,0" Grid.Column="0">
+        <DataGrid ItemsSource="{Binding Hosts}" AutoGenerateColumns="False" IsReadOnly="False">
+          <DataGrid.Columns>
+            <DataGridTextColumn Header="PC / Device name" Binding="{Binding Name}" Width="180"/>
+            <DataGridTextColumn Header="IP" Binding="{Binding Ip}" Width="140"/>
+            <DataGridTextColumn Header="MAC" Binding="{Binding Mac}" Width="180"/>
+            <DataGridTextColumn Header="Vendor" Binding="{Binding Vendor}" Width="160"/>
+            <DataGridTextColumn Header="Download (KB/s)" Binding="{Binding DownloadKbps}" Width="140"/>
+            <DataGridTextColumn Header="Upload (KB/s)" Binding="{Binding UploadKbps}" Width="140"/>
 
-      <StackPanel Grid.Column="1">
-        <StackPanel.Resources>
-          <Style TargetType="{x:Type FrameworkElement}">
-            <Setter Property="Margin" Value="0,10,0,0"/>
-          </Style>
-        </StackPanel.Resources>
-        <GroupBox Header="Clients">
-          <DataGrid ItemsSource="{Binding Hosts}" AutoGenerateColumns="False">
-            <DataGrid.Columns>
-              <DataGridTextColumn Header="IP" Binding="{Binding Ip}" Width="140"/>
-              <DataGridTextColumn Header="MAC" Binding="{Binding Mac}" Width="160"/>
-              <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="120"/>
-              <DataGridTextColumn Header="Down (KB/s)" Binding="{Binding DownloadKbps}" Width="120"/>
-              <DataGridTextColumn Header="Up (KB/s)" Binding="{Binding UploadKbps}" Width="120"/>
-              <DataGridCheckBoxColumn Header="Blocked" Binding="{Binding Blocked}" Width="90"/>
-              <DataGridTextColumn Header="Down Limit" Binding="{Binding DownLimitKbps}" Width="90"/>
-              <DataGridTextColumn Header="Up Limit" Binding="{Binding UpLimitKbps}" Width="90"/>
-            </DataGrid.Columns>
-          </DataGrid>
-        </GroupBox>
-        <GroupBox Header="ARP Spoofing">
-          <StackPanel>
-            <StackPanel.Resources>
-              <Style TargetType="{x:Type FrameworkElement}">
-                <Setter Property="Margin" Value="0,8,0,0"/>
-              </Style>
-            </StackPanel.Resources>
-            <CheckBox Content="Enable ARP Spoofing" IsChecked="{Binding EnableArp}"/>
-            <CheckBox Content="Bridge Forwarding" IsChecked="{Binding EnableForwarding}"/>
-          </StackPanel>
-        </GroupBox>
-        <GroupBox Header="DNS Spoofing">
-          <StackPanel>
-            <StackPanel.Resources>
-              <Style TargetType="{x:Type FrameworkElement}">
-                <Setter Property="Margin" Value="0,8,0,0"/>
-              </Style>
-            </StackPanel.Resources>
-            <CheckBox Content="Enable DNS Spoofing" IsChecked="{Binding EnableDns}"/>
-            <DockPanel>
-              <TextBox Width="220" Margin="0,0,5,0" Text="{Binding DnsDomain}" mah:TextBoxHelper.Watermark="Domain (e.g., example.com)"/>
-              <TextBox Width="140" Margin="0,0,5,0" Text="{Binding DnsIp}" mah:TextBoxHelper.Watermark="Fake IP"/>
-              <Button Content="Add" Command="{Binding AddDnsRuleCommand}"/>
-            </DockPanel>
-            <ListBox ItemsSource="{Binding DnsRules}" DisplayMemberPath="Display" Height="120"/>
-          </StackPanel>
-        </GroupBox>
-        <GroupBox Header="Bandwidth Limiter">
-          <StackPanel>
-            <StackPanel.Resources>
-              <Style TargetType="{x:Type FrameworkElement}">
-                <Setter Property="Margin" Value="0,8,0,0"/>
-              </Style>
-            </StackPanel.Resources>
-            <CheckBox Content="Enable Bandwidth Limit" IsChecked="{Binding EnableLimit}"/>
-            <StackPanel Orientation="Horizontal">
+            <!-- Numeric-only caps -->
+            <DataGridTemplateColumn Header="Down cap (KB/s)" Width="140">
+              <DataGridTemplateColumn.CellTemplate>
+                <DataTemplate>
+                  <mah:NumericUpDown Minimum="0" Maximum="102400"
+                                   Value="{Binding DownLimitKbps, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                   Interval="1" />
+                </DataTemplate>
+              </DataGridTemplateColumn.CellTemplate>
+            </DataGridTemplateColumn>
+            <DataGridTemplateColumn Header="Up cap (KB/s)" Width="140">
+              <DataGridTemplateColumn.CellTemplate>
+                <DataTemplate>
+                  <mah:NumericUpDown Minimum="0" Maximum="102400"
+                                   Value="{Binding UpLimitKbps, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                   Interval="1" />
+                </DataTemplate>
+              </DataGridTemplateColumn.CellTemplate>
+            </DataGridTemplateColumn>
+
+            <DataGridCheckBoxColumn Header="Block" Binding="{Binding Blocked, Mode=TwoWay}" Width="80"/>
+          </DataGrid.Columns>
+        </DataGrid>
+      </GroupBox>
+        <StackPanel Grid.Column="1">
+          <GroupBox Header="ARP Spoofing">
+            <StackPanel>
               <StackPanel.Resources>
                 <Style TargetType="{x:Type FrameworkElement}">
-                  <Setter Property="Margin" Value="0,0,6,0"/>
+                  <Setter Property="Margin" Value="0,8,0,0"/>
                 </Style>
               </StackPanel.Resources>
-              <TextBlock Text="Down (KB/s):"/>
-              <Slider Width="150" Minimum="1" Maximum="102400" Value="{Binding DownKbps}"/>
-              <TextBlock Text="{Binding DownKbps}"/>
+              <CheckBox Content="Enable ARP Spoofing" IsChecked="{Binding EnableArp}"/>
+              <CheckBox Content="Bridge Forwarding" IsChecked="{Binding EnableForwarding}"/>
             </StackPanel>
-            <StackPanel Orientation="Horizontal">
+          </GroupBox>
+          <GroupBox Header="DNS Spoofing">
+            <StackPanel>
               <StackPanel.Resources>
                 <Style TargetType="{x:Type FrameworkElement}">
-                  <Setter Property="Margin" Value="0,0,6,0"/>
+                  <Setter Property="Margin" Value="0,8,0,0"/>
                 </Style>
               </StackPanel.Resources>
-              <TextBlock Text="Up (KB/s):"/>
-              <Slider Width="150" Minimum="1" Maximum="102400" Value="{Binding UpKbps}"/>
-              <TextBlock Text="{Binding UpKbps}"/>
+              <CheckBox Content="Enable DNS Spoofing" IsChecked="{Binding EnableDns}"/>
+              <DockPanel>
+                <TextBox Width="220" Margin="0,0,5,0" Text="{Binding DnsDomain}" mah:TextBoxHelper.Watermark="Domain (e.g., example.com)"/>
+                <TextBox Width="140" Margin="0,0,5,0" Text="{Binding DnsIp}" mah:TextBoxHelper.Watermark="Fake IP"/>
+                <Button Content="Add" Command="{Binding AddDnsRuleCommand}"/>
+              </DockPanel>
+              <ListBox ItemsSource="{Binding DnsRules}" DisplayMemberPath="Display" Height="120"/>
             </StackPanel>
-            <StackPanel Orientation="Horizontal">
+          </GroupBox>
+          <GroupBox Header="Bandwidth Limiter">
+            <StackPanel>
               <StackPanel.Resources>
                 <Style TargetType="{x:Type FrameworkElement}">
-                  <Setter Property="Margin" Value="0,0,6,0"/>
+                  <Setter Property="Margin" Value="0,8,0,0"/>
                 </Style>
               </StackPanel.Resources>
-              <TextBlock Text="Extra Delay (ms):"/>
-              <Slider Width="150" Minimum="0" Maximum="1000" Value="{Binding ExtraDelayMs}"/>
-              <TextBlock Text="{Binding ExtraDelayMs}"/>
+              <CheckBox Content="Enable Bandwidth Limit" IsChecked="{Binding EnableLimit}"/>
+              <StackPanel Orientation="Horizontal">
+                <StackPanel.Resources>
+                  <Style TargetType="{x:Type FrameworkElement}">
+                    <Setter Property="Margin" Value="0,0,6,0"/>
+                  </Style>
+                </StackPanel.Resources>
+                <TextBlock Text="Down (KB/s):"/>
+                <Slider Width="150" Minimum="1" Maximum="102400" Value="{Binding DownKbps}"/>
+                <TextBlock Text="{Binding DownKbps}"/>
+              </StackPanel>
+              <StackPanel Orientation="Horizontal">
+                <StackPanel.Resources>
+                  <Style TargetType="{x:Type FrameworkElement}">
+                    <Setter Property="Margin" Value="0,0,6,0"/>
+                  </Style>
+                </StackPanel.Resources>
+                <TextBlock Text="Up (KB/s):"/>
+                <Slider Width="150" Minimum="1" Maximum="102400" Value="{Binding UpKbps}"/>
+                <TextBlock Text="{Binding UpKbps}"/>
+              </StackPanel>
+              <StackPanel Orientation="Horizontal">
+                <StackPanel.Resources>
+                  <Style TargetType="{x:Type FrameworkElement}">
+                    <Setter Property="Margin" Value="0,0,6,0"/>
+                  </Style>
+                </StackPanel.Resources>
+                <TextBlock Text="Extra Delay (ms):"/>
+                <Slider Width="150" Minimum="0" Maximum="1000" Value="{Binding ExtraDelayMs}"/>
+                <TextBlock Text="{Binding ExtraDelayMs}"/>
+              </StackPanel>
             </StackPanel>
-          </StackPanel>
-        </GroupBox>
-        <GroupBox Header="Status">
-          <TextBlock Text="{Binding Status}" TextWrapping="Wrap"/>
-        </GroupBox>
-      </StackPanel>
+          </GroupBox>
+          <GroupBox Header="Status">
+            <TextBlock Text="{Binding Status}" TextWrapping="Wrap"/>
+          </GroupBox>
+        </StackPanel>
+      </Grid>
     </Grid>
-  </Grid>
 </mah:MetroWindow>

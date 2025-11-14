@@ -34,5 +34,8 @@ namespace NetSpoofer {
 
         public DateTime LastSeenUtc { get => _last; set { _last = value; OnPropertyChanged(); } }
         private DateTime _last = DateTime.MinValue;
+
+        public string Vendor { get => _vendor; set { _vendor = value; OnPropertyChanged(); } }
+        private string _vendor = string.Empty;
     }
 }
